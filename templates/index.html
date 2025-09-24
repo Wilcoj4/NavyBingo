@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Navy Command Bingo – Go Mode</title>
   <style>
+    .cell.bingo .statement,
+    .cell.bingo .answer {
+      color: #111 !important;
+      background: inherit;
+      border-color: #FFD700;
+    }
     :root {
       --bg: #0f172a;         /* slate-900 */
       --card: #111827;       /* gray-900 */
@@ -161,6 +167,21 @@
 
     .cell.complete { background: rgba(16, 185, 129, 0.22); border-color: rgba(16,185,129,0.5); box-shadow: inset 0 0 0 1px rgba(16,185,129,0.25); }
     .cell.free { background: rgba(56, 189, 248, 0.18); border-color: rgba(56,189,248,0.5); display: grid; place-items: center; text-align: center; font-weight: 800; font-size: 1.25rem; letter-spacing: 0.05em; }
+      .cell.bingo {
+        background: linear-gradient(135deg, #FFD700 60%, #FFF8DC 100%);
+        border-color: #FFD700;
+        box-shadow: 0 0 12px 2px #FFD70099, 0 0 0 2px #FFF8DC;
+        an
+        position: relative;
+      }
+      .cell.bingo::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        pointer-events: none;
+        box-shadow: 0 0 16px 4px #FFD70055;
+      }
 
     .statement { font-size: 0.95rem; line-height: 1.35; color: #e5e7eb; }
 
@@ -229,8 +250,7 @@
 
       <div id="categories" class="categories" aria-live="polite"></div>
       <div id="grid" class="grid" role="grid" aria-label="Bingo grid"></div>
-
-      <div class="small" style="margin-top:8px;">Cells turn green when answered (auto‑save per person/date).</div>
+      <div class="small" style="margin-top:8px;">Cells turn green when answered. Click Save to update bingo highlights.</div>
     </section>
 
     <footer>
@@ -334,12 +354,73 @@ else if (ch === '\r') { /* ignore */ }
       clearGrid();
       renderCategories(state.categories.headers);
       const freeR = 2, freeC = 2;
+      // Helper to check if a cell is complete (answered or free)
+      function isCellComplete(r, c) {
+        if (r === freeR && c === freeC) return true;
+        const id = cellId(r, c);
+        return (state.answers[id] || '').trim().length > 0;
+      }
+
+      // Bingo detection
+      function getBingoLines() {
+        const lines = [];
+        // Rows
+        for (let r = 0; r < 5; r++) {
+          let bingo = true;
+          for (let c = 0; c < 5; c++) {
+            if (!isCellComplete(r, c)) { bingo = false; break; }
+          }
+          if (bingo) lines.push({ type: 'row', idx: r });
+        }
+        // Columns
+        for (let c = 0; c < 5; c++) {
+          let bingo = true;
+          for (let r = 0; r < 5; r++) {
+            if (!isCellComplete(r, c)) { bingo = false; break; }
+          }
+          if (bingo) lines.push({ type: 'col', idx: c });
+        }
+        // Diagonal TL-BR
+        let bingoDiag1 = true;
+        for (let i = 0; i < 5; i++) {
+          if (!isCellComplete(i, i)) { bingoDiag1 = false; break; }
+        }
+        if (bingoDiag1) lines.push({ type: 'diag', idx: 1 });
+        // Diagonal TR-BL
+        let bingoDiag2 = true;
+        for (let i = 0; i < 5; i++) {
+          if (!isCellComplete(i, 4 - i)) { bingoDiag2 = false; break; }
+        }
+        if (bingoDiag2) lines.push({ type: 'diag', idx: 2 });
+        return lines;
+      }
+
+      // Get bingo cells
+      function getBingoCells(lines) {
+        const cells = new Set();
+        lines.forEach(line => {
+          if (line.type === 'row') {
+            for (let c = 0; c < 5; c++) cells.add(cellId(line.idx, c));
+          } else if (line.type === 'col') {
+            for (let r = 0; r < 5; r++) cells.add(cellId(r, line.idx));
+          } else if (line.type === 'diag' && line.idx === 1) {
+            for (let i = 0; i < 5; i++) cells.add(cellId(i, i));
+          } else if (line.type === 'diag' && line.idx === 2) {
+            for (let i = 0; i < 5; i++) cells.add(cellId(i, 4 - i));
+          }
+        });
+        return cells;
+      }
+
+      const bingoLines = getBingoLines();
+      const bingoCells = getBingoCells(bingoLines);
       for (let r = 0; r < 5; r++) {
         for (let c = 0; c < 5; c++) {
           const id = cellId(r,c);
           const cell = document.createElement('div');
           cell.className = 'cell';
           cell.dataset.cellId = id;
+          if (bingoCells.has(id)) cell.classList.add('bingo');
 
           if (r === freeR && c === freeC) {
             cell.classList.add('free');
@@ -355,12 +436,14 @@ else if (ch === '\r') { /* ignore */ }
             ansEl.placeholder = 'Answer…';
             ansEl.value = state.answers[id] || '';
             autoFit(ansEl);
+
             ansEl.addEventListener('input', () => {
               currentAnswers[id] = ansEl.value;
               autoFit(ansEl);
               if (ansEl.value.trim().length > 0) cell.classList.add('complete');
               else cell.classList.remove('complete');
               debouncedSave();
+              updateBingoHighlights();
             });
 
             if ((state.answers[id] || '').trim().length > 0) cell.classList.add('complete');
@@ -373,6 +456,72 @@ else if (ch === '\r') { /* ignore */ }
         }
       }
     }
+
+    // Update bingo highlights in-place
+    function updateBingoHighlights() {
+      const freeR = 2, freeC = 2;
+      function isCellComplete(r, c) {
+        if (r === freeR && c === freeC) return true;
+        const id = cellId(r, c);
+        return (currentAnswers[id] || '').trim().length > 0;
+      }
+      function getBingoLines() {
+        const lines = [];
+        for (let r = 0; r < 5; r++) {
+          let bingo = true;
+          for (let c = 0; c < 5; c++) {
+            if (!isCellComplete(r, c)) { bingo = false; break; }
+          }
+          if (bingo) lines.push({ type: 'row', idx: r });
+        }
+        for (let c = 0; c < 5; c++) {
+          let bingo = true;
+          for (let r = 0; r < 5; r++) {
+            if (!isCellComplete(r, c)) { bingo = false; break; }
+          }
+          if (bingo) lines.push({ type: 'col', idx: c });
+        }
+        let bingoDiag1 = true;
+        for (let i = 0; i < 5; i++) {
+          if (!isCellComplete(i, i)) { bingoDiag1 = false; break; }
+        }
+        if (bingoDiag1) lines.push({ type: 'diag', idx: 1 });
+        let bingoDiag2 = true;
+        for (let i = 0; i < 5; i++) {
+          if (!isCellComplete(i, 4 - i)) { bingoDiag2 = false; break; }
+        }
+        if (bingoDiag2) lines.push({ type: 'diag', idx: 2 });
+        return lines;
+      }
+      function getBingoCells(lines) {
+        const cells = new Set();
+        lines.forEach(line => {
+          if (line.type === 'row') {
+            for (let c = 0; c < 5; c++) cells.add(cellId(line.idx, c));
+          } else if (line.type === 'col') {
+            for (let r = 0; r < 5; r++) cells.add(cellId(r, line.idx));
+          } else if (line.type === 'diag' && line.idx === 1) {
+            for (let i = 0; i < 5; i++) cells.add(cellId(i, i));
+          } else if (line.type === 'diag' && line.idx === 2) {
+            for (let i = 0; i < 5; i++) cells.add(cellId(i, 4 - i));
+          }
+        });
+        return cells;
+      }
+      const bingoLines = getBingoLines();
+      const bingoCells = getBingoCells(bingoLines);
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const id = cellId(r, c);
+          const cell = gridEl.querySelector(`[data-cell-id="${id}"]`);
+          if (!cell) continue;
+          if (bingoCells.has(id)) cell.classList.add('bingo');
+          else cell.classList.remove('bingo');
+        }
+      }
+    }
+    // Initial bingo highlight
+    setTimeout(updateBingoHighlights, 0);
 
     function generateNewGrid() {
       if (!csvData || !csvData.columns || csvData.columns.length !== 5) {
@@ -489,6 +638,11 @@ else if (ch === '\r') { /* ignore */ }
           csvStatus.className = 'ok';
           csvStatus.textContent = 'Generated new card.';
         }
+      });
+
+      // Save button updates bingo highlights
+      $('#saveBtn').addEventListener('click', () => {
+        renderGridFromState({ categories: currentCategories, grid: currentGrid, answers: currentAnswers });
       });
     });
   </script>
