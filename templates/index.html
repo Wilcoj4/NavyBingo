@@ -3,10 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Navy Command Bingo – Go Mode</title>
+  <title>Bingo – Go Mode</title>
   <style>
     .cell.bingo .statement,
     .cell.bingo .answer {
+      color: #111 !important;
+      background: inherit;
+      border-color: #10b981;
+    }
+    .cell.blackout .statement,
+    .cell.blackout .answer {
       color: #111 !important;
       background: inherit;
       border-color: #FFD700;
@@ -172,16 +178,29 @@
       overflow: hidden; /* keep content within cell */
     }
 
-    .cell.complete { background: rgba(16, 185, 129, 0.22); border-color: rgba(16,185,129,0.5); box-shadow: inset 0 0 0 1px rgba(16,185,129,0.25); }
+    .cell.complete { background: rgba(56, 189, 248, 0.22); border-color: rgba(56,189,248,0.5); box-shadow: inset 0 0 0 1px rgba(56,189,248,0.25); }
     .cell.free { background: rgba(56, 189, 248, 0.18); border-color: rgba(56,189,248,0.5); display: grid; place-items: center; text-align: center; font-weight: 800; font-size: 1.25rem; letter-spacing: 0.05em; }
       .cell.bingo {
-        background: linear-gradient(135deg, #FFD700 60%, #FFF8DC 100%);
-        border-color: #FFD700;
-        box-shadow: 0 0 12px 2px #FFD70099, 0 0 0 2px #FFF8DC;
-        an
+        background: linear-gradient(135deg, #10b981 60%, #d1fae5 100%);
+        border-color: #10b981;
+        box-shadow: 0 0 12px 2px #10b98199, 0 0 0 2px #d1fae5;
         position: relative;
       }
       .cell.bingo::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        pointer-events: none;
+        box-shadow: 0 0 16px 4px #10b98155;
+      }
+      .cell.blackout {
+        background: linear-gradient(135deg, #FFD700 60%, #FFF8DC 100%);
+        border-color: #FFD700;
+        box-shadow: 0 0 12px 2px #FFD70099, 0 0 0 2px #FFF8DC;
+        position: relative;
+      }
+      .cell.blackout::after {
         content: "";
         position: absolute;
         inset: 0;
@@ -218,15 +237,17 @@
       button, .hint, #csvStatus { display: none !important; }
       .cell { border: 1px solid #333; }
       .cell.free { background: #e0f2fe !important; }
-      .cell.complete { background: #d1fae5 !important; }
+      .cell.complete { background: #dbeafe !important; }
+      .cell.bingo { background: #d1fae5 !important; }
+      .cell.blackout { background: #fef3c7 !important; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Command Bingo</h1>
-      <div class="subtitle">Single‑button flow: "Go" will load or create your card</div>
+      <h1>Bingo</h1>
+      <div class="subtitle">Click "Go" to load or create your card</div>
     </header>
 
     <section class="card">
@@ -235,29 +256,21 @@
           <label for="date">Date</label>
           <input type="date" id="date" required />
         </div>
-        <div class="field">
-          <label for="rank">Rank</label>
-          <input type="text" id="rank" placeholder="e.g., E‑5 / PO2" required />
-        </div>
-        <div class="field">
-          <label for="first">First name</label>
-          <input type="text" id="first" required />
-        </div>
-        <div class="field">
-          <label for="last">Last name</label>
-          <input type="text" id="last" required />
+        <div class="field" style="grid-column: span 2;">
+          <label for="idNum">ID #</label>
+          <input type="text" id="idNum" placeholder="e.g., 12345" required />
         </div>
         <div class="actions" style="grid-column: span 8;">
           <button type="button" id="goBtn" title="Load saved or create a new card for this person">Go</button>
         </div>
       </form>
 
-      <div class="hint">Data source: <code>CommandBingo_fix.csv</code> is auto‑loaded from the server.</div>
+      <div class="hint"></div>
       <div id="csvStatus" class="warn">Loading data…</div>
 
       <div id="categories" class="categories" aria-live="polite"></div>
       <div id="grid" class="grid" role="grid" aria-label="Bingo grid"></div>
-      <div class="small" style="margin-top:8px;">Cells turn green when answered. Click Save to update bingo highlights.</div>
+      <div class="small" style="margin-top:8px;">.</div>
     </section>
 
     <footer>
@@ -304,7 +317,7 @@ else if (ch === '\r') { /* ignore */ }
 
     function storageKey(meta) {
       const clean = (s) => (s || '').trim().toUpperCase();
-      return `bingo:${meta.date}:${clean(meta.rank)}:${clean(meta.first)}:${clean(meta.last)}`;
+      return `bingo:${meta.date}:${clean(meta.idNum)}`;
     }
 
     function saveState() {
@@ -421,13 +434,27 @@ else if (ch === '\r') { /* ignore */ }
 
       const bingoLines = getBingoLines();
       const bingoCells = getBingoCells(bingoLines);
+      
+      // Check for blackout (all cells complete)
+      let isBlackout = true;
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          if (!isCellComplete(r, c)) {
+            isBlackout = false;
+            break;
+          }
+        }
+        if (!isBlackout) break;
+      }
+      
       for (let r = 0; r < 5; r++) {
         for (let c = 0; c < 5; c++) {
           const id = cellId(r,c);
           const cell = document.createElement('div');
           cell.className = 'cell';
           cell.dataset.cellId = id;
-          if (bingoCells.has(id)) cell.classList.add('bingo');
+          if (isBlackout) cell.classList.add('blackout');
+          else if (bingoCells.has(id)) cell.classList.add('bingo');
 
           if (r === freeR && c === freeC) {
             cell.classList.add('free');
@@ -440,7 +467,7 @@ else if (ch === '\r') { /* ignore */ }
 
             const ansEl = document.createElement('textarea');
             ansEl.className = 'answer';
-            ansEl.placeholder = 'Name of Person...';
+            ansEl.placeholder = 'Sailor ID #';
             ansEl.value = state.answers[id] || '';
             autoFit(ansEl);
 
@@ -517,13 +544,34 @@ else if (ch === '\r') { /* ignore */ }
       }
       const bingoLines = getBingoLines();
       const bingoCells = getBingoCells(bingoLines);
+      
+      // Check for blackout (all cells complete)
+      let isBlackout = true;
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          if (!isCellComplete(r, c)) {
+            isBlackout = false;
+            break;
+          }
+        }
+        if (!isBlackout) break;
+      }
+      
       for (let r = 0; r < 5; r++) {
         for (let c = 0; c < 5; c++) {
           const id = cellId(r, c);
           const cell = gridEl.querySelector(`[data-cell-id="${id}"]`);
           if (!cell) continue;
-          if (bingoCells.has(id)) cell.classList.add('bingo');
-          else cell.classList.remove('bingo');
+          if (isBlackout) {
+            cell.classList.add('blackout');
+            cell.classList.remove('bingo');
+          } else if (bingoCells.has(id)) {
+            cell.classList.add('bingo');
+            cell.classList.remove('blackout');
+          } else {
+            cell.classList.remove('bingo');
+            cell.classList.remove('blackout');
+          }
         }
       }
     }
@@ -558,12 +606,10 @@ else if (ch === '\r') { /* ignore */ }
     function ensureMeta() {
       const meta = {
         date: $('#date').value,
-        rank: $('#rank').value,
-        first: $('#first').value,
-        last: $('#last').value,
+        idNum: $('#idNum').value,
       };
-      if (!meta.date || !meta.rank || !meta.first || !meta.last) {
-        alert('Please complete Date, Rank, First, and Last to continue.');
+      if (!meta.date || !meta.idNum) {
+        alert('Please complete Date and ID # to continue.');
         return null;
       }
       currentMeta = meta;
@@ -595,13 +641,13 @@ else if (ch === '\r') { /* ignore */ }
       }
       csvData = { headers, columns };
       csvStatus.className = 'ok';
-      csvStatus.textContent = `CSV loaded: ${columns.map(c => c.length).join(' / ')} items per column`;
+      csvStatus.textContent = `CSV loaded`;
     }
 
     async function tryFetchCSV() {
       csvStatus.className = 'warn';
-      csvStatus.textContent = 'Loading CommandBingo_fix.csv…';
-      const urls = ['/static/CommandBingo_fix.csv', 'CommandBingo_fix.csv'];
+      csvStatus.textContent = 'Loading Bingo.csv…';
+      const urls = ['/static/Bingo.csv', 'Bingo.csv'];
       for (const u of urls) {
         try {
           const res = await fetch(u, { cache: 'no-store' });
@@ -612,7 +658,7 @@ else if (ch === '\r') { /* ignore */ }
         } catch (e) { /* try next */ }
       }
       csvStatus.className = 'error';
-      csvStatus.textContent = 'Could not fetch CommandBingo_fix.csv from server.';
+      csvStatus.textContent = 'Could not fetch Bingo.csv from server.';
     }
 
     // --- Global state ---
@@ -627,7 +673,7 @@ else if (ch === '\r') { /* ignore */ }
       tryFetchCSV();
 
       // Single-button flow
-      $('#goBtn').addEventListener('click', () => {
+      const handleGo = () => {
         const meta = ensureMeta();
         if (!meta) return;
         const saved = tryLoad(meta);
@@ -645,6 +691,14 @@ else if (ch === '\r') { /* ignore */ }
           csvStatus.className = 'ok';
           csvStatus.textContent = 'Generated new card.';
         }
+      };
+
+      $('#goBtn').addEventListener('click', handleGo);
+      
+      // Handle Enter key submission
+      $('#metaForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleGo();
       });
 
       // Save button updates bingo highlights
